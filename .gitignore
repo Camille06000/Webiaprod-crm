@@ -3,5 +3,5 @@ node_modules
 out
 *.log
 .env*
-data/*.db
+data/
 .DS_Store
