@@ -1,27 +1,26 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
-const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "crm.db");
+let _sql: NeonQueryFunction<false, false> | null = null;
+let _migrated = false;
 
-let _db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (_db) return _db;
-  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-  const db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  migrate(db);
-  _db = db;
-  return db;
+export function getSql(): NeonQueryFunction<false, false> {
+  if (_sql) return _sql;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL manquant. Configure-le dans .env.local (dev) ou dans Vercel → Settings → Environment Variables (prod)."
+    );
+  }
+  _sql = neon(url);
+  return _sql;
 }
 
-function migrate(db: Database.Database) {
-  db.exec(`
+export async function ensureSchema(): Promise<void> {
+  if (_migrated) return;
+  const sql = getSql();
+  await sql`
     CREATE TABLE IF NOT EXISTS leads (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       entreprise TEXT NOT NULL,
       secteur TEXT NOT NULL DEFAULT '',
       ville TEXT NOT NULL DEFAULT '',
@@ -50,11 +49,11 @@ function migrate(db: Database.Database) {
       date_signature TEXT,
       montant_encaisse REAL,
       status TEXT NOT NULL DEFAULT 'nouveaux',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-    CREATE INDEX IF NOT EXISTS idx_leads_ville_secteur ON leads(ville, secteur);
-  `);
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_leads_ville_secteur ON leads(ville, secteur)`;
+  _migrated = true;
 }

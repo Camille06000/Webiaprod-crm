@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
   const id = Number(params.id);
-  const lead = getLead(id);
+  const lead = await getLead(id);
   if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const op: "done" | "skip" = body?.op === "skip" ? "skip" : "done";
@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (op === "done") {
     const today = todayISO();
     const next = recommendForLead({ status: lead.status });
-    const updated = updateLead(id, {
+    const updated = await updateLead(id, {
       date_derniere_action: today,
       date_prochaine_action: next?.date ?? null,
       prochaine_action_type: next?.type ?? null,
@@ -23,8 +23,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ lead: updated });
   }
 
-  // skip → push +2 days
   const newDate = addDaysISO(lead.date_prochaine_action ?? todayISO(), 2);
-  const updated = updateLead(id, { date_prochaine_action: newDate });
+  const updated = await updateLead(id, { date_prochaine_action: newDate });
   return NextResponse.json({ lead: updated });
 }

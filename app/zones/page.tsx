@@ -3,8 +3,8 @@ import { listZones } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-export default function ZonesPage() {
-  const zones = listZones();
+export default async function ZonesPage() {
+  const zones = await listZones();
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Zones bloquées</h1>

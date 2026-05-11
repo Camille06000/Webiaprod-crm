@@ -4,7 +4,7 @@ import { createLead, listLeads } from "@/lib/repo";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ leads: listLeads() });
+  return NextResponse.json({ leads: await listLeads() });
 }
 
 export async function POST(req: Request) {
@@ -12,6 +12,6 @@ export async function POST(req: Request) {
   if (!body?.entreprise) {
     return NextResponse.json({ error: "entreprise requis" }, { status: 400 });
   }
-  const lead = createLead(body);
+  const lead = await createLead(body);
   return NextResponse.json({ lead }, { status: 201 });
 }

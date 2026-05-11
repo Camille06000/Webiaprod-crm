@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { ensureSchema, getSql } from "./db";
 import type { Lead, LeadInput } from "./types";
 import { computeScore, shouldBePasFit } from "./scoring";
 import { recommendForLead } from "./actions";
@@ -13,36 +13,6 @@ const BOOL_FIELDS = [
   "gbp_bien_rempli",
 ] as const;
 
-const FIELDS = [
-  "entreprise",
-  "secteur",
-  "ville",
-  "quartier",
-  "email",
-  "telephone",
-  "site",
-  "note_google",
-  "nb_avis",
-  "top10_google",
-  "visible_chatgpt",
-  "email_pro_verifiable",
-  "site_actif",
-  "description_claire",
-  "gbp_bien_rempli",
-  "raison_fit",
-  "accroche",
-  "objet_email",
-  "gmail_draft_id",
-  "date_contact",
-  "date_derniere_action",
-  "date_prochaine_action",
-  "prochaine_action_type",
-  "offre_acceptee",
-  "date_signature",
-  "montant_encaisse",
-  "status",
-] as const;
-
 function coerce(input: LeadInput) {
   const out: Record<string, unknown> = { ...input };
   for (const f of BOOL_FIELDS) {
@@ -51,48 +21,77 @@ function coerce(input: LeadInput) {
   return out;
 }
 
-export function listLeads(): Lead[] {
-  return getDb().prepare("SELECT * FROM leads ORDER BY score DESC, updated_at DESC").all() as Lead[];
+function row(r: Record<string, unknown>): Lead {
+  return r as unknown as Lead;
 }
 
-export function getLead(id: number): Lead | undefined {
-  return getDb().prepare("SELECT * FROM leads WHERE id = ?").get(id) as Lead | undefined;
+export async function listLeads(): Promise<Lead[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM leads ORDER BY score DESC, updated_at DESC`;
+  return (rows as Record<string, unknown>[]).map(row);
 }
 
-export function createLead(input: LeadInput): Lead {
-  const db = getDb();
+export async function getLead(id: number): Promise<Lead | undefined> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM leads WHERE id = ${id}`;
+  const arr = rows as Record<string, unknown>[];
+  return arr.length ? row(arr[0]) : undefined;
+}
+
+export async function createLead(input: LeadInput): Promise<Lead> {
+  await ensureSchema();
+  const sql = getSql();
   const data = coerce(input);
   const score = computeScore({ ...input });
   let status: ColumnId = (data.status as ColumnId) ?? "nouveaux";
   if (shouldBePasFit(score)) status = "pas_fit";
 
   const next = recommendForLead({ status });
+  const v = (k: string) => (data as Record<string, unknown>)[k] ?? null;
 
-  const cols = [...FIELDS, "score"];
-  const vals = cols.map((c) => {
-    if (c === "score") return score;
-    if (c === "status") return status;
-    if (c === "date_prochaine_action" && next) return next.date;
-    if (c === "prochaine_action_type" && next) return next.type;
-    return (data as Record<string, unknown>)[c] ?? null;
-  });
-
-  const placeholders = cols.map(() => "?").join(", ");
-  const sql = `INSERT INTO leads (${cols.join(", ")}) VALUES (${placeholders})`;
-  const info = db.prepare(sql).run(...vals);
-  return getLead(Number(info.lastInsertRowid))!;
+  const rows = await sql`
+    INSERT INTO leads (
+      entreprise, secteur, ville, quartier, email, telephone, site,
+      note_google, nb_avis,
+      top10_google, visible_chatgpt, email_pro_verifiable, site_actif,
+      description_claire, gbp_bien_rempli,
+      score, raison_fit, accroche, objet_email, gmail_draft_id,
+      date_contact, date_derniere_action, date_prochaine_action, prochaine_action_type,
+      offre_acceptee, date_signature, montant_encaisse, status
+    ) VALUES (
+      ${v("entreprise") ?? ""}, ${v("secteur") ?? ""}, ${v("ville") ?? ""}, ${v("quartier")},
+      ${v("email")}, ${v("telephone")}, ${v("site")},
+      ${v("note_google")}, ${v("nb_avis")},
+      ${(data as Record<string, number>)["top10_google"] ?? 0},
+      ${(data as Record<string, number>)["visible_chatgpt"] ?? 0},
+      ${(data as Record<string, number>)["email_pro_verifiable"] ?? 0},
+      ${(data as Record<string, number>)["site_actif"] ?? 0},
+      ${(data as Record<string, number>)["description_claire"] ?? 0},
+      ${(data as Record<string, number>)["gbp_bien_rempli"] ?? 0},
+      ${score}, ${v("raison_fit")}, ${v("accroche")}, ${v("objet_email")}, ${v("gmail_draft_id")},
+      ${v("date_contact")}, ${v("date_derniere_action")},
+      ${next?.date ?? v("date_prochaine_action")},
+      ${next?.type ?? v("prochaine_action_type")},
+      ${v("offre_acceptee")}, ${v("date_signature")}, ${v("montant_encaisse")},
+      ${status}
+    )
+    RETURNING *
+  `;
+  return row((rows as Record<string, unknown>[])[0]);
 }
 
-export function updateLead(id: number, patch: LeadInput): Lead | undefined {
-  const db = getDb();
-  const existing = getLead(id);
+export async function updateLead(id: number, patch: LeadInput): Promise<Lead | undefined> {
+  await ensureSchema();
+  const sql = getSql();
+  const existing = await getLead(id);
   if (!existing) return undefined;
   const data = coerce(patch);
 
   const merged: Partial<Lead> = { ...existing, ...(data as Partial<Lead>) };
   const newScore = computeScore(merged);
 
-  // Recompute pas_fit only when relevant inputs changed and status not explicitly set
   let newStatus: ColumnId = (data.status as ColumnId) ?? existing.status;
   if (!("status" in patch)) {
     if (shouldBePasFit(newScore) && existing.status === "nouveaux") {
@@ -100,51 +99,75 @@ export function updateLead(id: number, patch: LeadInput): Lead | undefined {
     }
   }
 
-  // If status changed, recompute next action
-  let next: { date: string; type: string } | null = null;
+  let nextDate: string | null = existing.date_prochaine_action;
+  let nextType: string | null = existing.prochaine_action_type;
   if (newStatus !== existing.status) {
     const r = recommendForLead({ status: newStatus });
-    next = r ? { date: r.date, type: r.type } : null;
+    nextDate = r?.date ?? null;
+    nextType = r?.type ?? null;
   }
+  if ("date_prochaine_action" in patch) nextDate = (patch as Record<string, string | null>).date_prochaine_action ?? null;
+  if ("prochaine_action_type" in patch) nextType = (patch as Record<string, string | null>).prochaine_action_type ?? null;
 
-  const updatable = FIELDS.filter((f) => f in data || f === "status");
-  if (next) {
-    updatable.push("date_prochaine_action", "prochaine_action_type");
-  }
+  const pick = <K extends keyof Lead>(k: K, fallback: Lead[K]): Lead[K] =>
+    (k in data ? ((data as Record<string, unknown>)[k as string] as Lead[K]) : fallback);
 
-  const setClauses: string[] = [];
-  const vals: unknown[] = [];
-  for (const f of updatable) {
-    setClauses.push(`${f} = ?`);
-    if (f === "status") vals.push(newStatus);
-    else if (f === "date_prochaine_action" && next) vals.push(next.date);
-    else if (f === "prochaine_action_type" && next) vals.push(next.type);
-    else vals.push((data as Record<string, unknown>)[f] ?? null);
-  }
-  setClauses.push("score = ?");
-  vals.push(newScore);
-  setClauses.push("updated_at = datetime('now')");
-
-  vals.push(id);
-  db.prepare(`UPDATE leads SET ${setClauses.join(", ")} WHERE id = ?`).run(...vals);
-  return getLead(id);
+  const rows = await sql`
+    UPDATE leads SET
+      entreprise = ${pick("entreprise", existing.entreprise)},
+      secteur = ${pick("secteur", existing.secteur)},
+      ville = ${pick("ville", existing.ville)},
+      quartier = ${pick("quartier", existing.quartier)},
+      email = ${pick("email", existing.email)},
+      telephone = ${pick("telephone", existing.telephone)},
+      site = ${pick("site", existing.site)},
+      note_google = ${pick("note_google", existing.note_google)},
+      nb_avis = ${pick("nb_avis", existing.nb_avis)},
+      top10_google = ${pick("top10_google", existing.top10_google)},
+      visible_chatgpt = ${pick("visible_chatgpt", existing.visible_chatgpt)},
+      email_pro_verifiable = ${pick("email_pro_verifiable", existing.email_pro_verifiable)},
+      site_actif = ${pick("site_actif", existing.site_actif)},
+      description_claire = ${pick("description_claire", existing.description_claire)},
+      gbp_bien_rempli = ${pick("gbp_bien_rempli", existing.gbp_bien_rempli)},
+      raison_fit = ${pick("raison_fit", existing.raison_fit)},
+      accroche = ${pick("accroche", existing.accroche)},
+      objet_email = ${pick("objet_email", existing.objet_email)},
+      gmail_draft_id = ${pick("gmail_draft_id", existing.gmail_draft_id)},
+      date_contact = ${pick("date_contact", existing.date_contact)},
+      date_derniere_action = ${pick("date_derniere_action", existing.date_derniere_action)},
+      date_prochaine_action = ${nextDate},
+      prochaine_action_type = ${nextType},
+      offre_acceptee = ${pick("offre_acceptee", existing.offre_acceptee)},
+      date_signature = ${pick("date_signature", existing.date_signature)},
+      montant_encaisse = ${pick("montant_encaisse", existing.montant_encaisse)},
+      status = ${newStatus},
+      score = ${newScore},
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  const arr = rows as Record<string, unknown>[];
+  return arr.length ? row(arr[0]) : undefined;
 }
 
-export function moveLead(id: number, status: ColumnId): Lead | undefined {
-  const existing = getLead(id);
+export async function moveLead(id: number, status: ColumnId): Promise<Lead | undefined> {
+  const existing = await getLead(id);
   if (!existing) return undefined;
-  const patch: LeadInput = { status, date_derniere_action: new Date().toISOString().slice(0, 10) };
+  const today = new Date().toISOString().slice(0, 10);
+  const patch: LeadInput = { status, date_derniere_action: today };
   if (status === "closes") {
     patch.offre_acceptee = "early_bird";
     patch.montant_encaisse = 500;
-    patch.date_signature = new Date().toISOString().slice(0, 10);
+    patch.date_signature = today;
   }
   return updateLead(id, patch);
 }
 
-export function deleteLead(id: number): boolean {
-  const info = getDb().prepare("DELETE FROM leads WHERE id = ?").run(id);
-  return info.changes > 0;
+export async function deleteLead(id: number): Promise<boolean> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`DELETE FROM leads WHERE id = ${id} RETURNING id`;
+  return (rows as unknown[]).length > 0;
 }
 
 export interface ZoneRow {
@@ -157,40 +180,54 @@ export interface ZoneRow {
   statut: "OUVERT" | "FERME";
 }
 
-export function listZones(): ZoneRow[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT ville, secteur,
-        SUM(CASE WHEN status = 'closes' THEN 1 ELSE 0 END) AS signes,
-        SUM(CASE WHEN status = 'demo' THEN 1 ELSE 0 END) AS demos_en_cours,
-        SUM(CASE WHEN status IN ('contactes','interesses') THEN 1 ELSE 0 END) AS contactes_en_cours,
-        COUNT(*) AS total
-       FROM leads
-       WHERE ville <> '' AND secteur <> ''
-       GROUP BY ville, secteur
-       ORDER BY signes DESC, ville ASC, secteur ASC`
-    )
-    .all() as Array<Omit<ZoneRow, "statut">>;
-  return rows.map((r) => ({
-    ...r,
-    statut: r.signes >= 3 ? "FERME" : "OUVERT",
-  }));
+export async function listZones(): Promise<ZoneRow[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT ville, secteur,
+      SUM(CASE WHEN status = 'closes' THEN 1 ELSE 0 END)::int AS signes,
+      SUM(CASE WHEN status = 'demo' THEN 1 ELSE 0 END)::int AS demos_en_cours,
+      SUM(CASE WHEN status IN ('contactes','interesses') THEN 1 ELSE 0 END)::int AS contactes_en_cours,
+      COUNT(*)::int AS total
+    FROM leads
+    WHERE ville <> '' AND secteur <> ''
+    GROUP BY ville, secteur
+    ORDER BY signes DESC, ville ASC, secteur ASC
+  `) as Array<Omit<ZoneRow, "statut">>;
+  return rows.map((r) => ({ ...r, statut: r.signes >= 3 ? "FERME" : "OUVERT" }));
 }
 
-export function leadsInZone(ville: string, secteur: string): Lead[] {
-  return getDb()
-    .prepare("SELECT * FROM leads WHERE ville = ? AND secteur = ? ORDER BY score DESC")
-    .all(ville, secteur) as Lead[];
+export async function leadsInZone(ville: string, secteur: string): Promise<Lead[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM leads WHERE ville = ${ville} AND secteur = ${secteur} ORDER BY score DESC`;
+  return (rows as Record<string, unknown>[]).map(row);
 }
 
-export function metrics() {
-  const db = getDb();
-  const total = (db.prepare("SELECT COUNT(*) AS n FROM leads").get() as { n: number }).n;
-  const earlyBirdSignes = (db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status = 'closes'").get() as { n: number }).n;
-  const demosEnCours = (db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status = 'demo'").get() as { n: number }).n;
-  const contactes = (db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status IN ('contactes','interesses','demo','closes')").get() as { n: number }).n;
-  const demosBookeesTotal = (db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status IN ('demo','closes')").get() as { n: number }).n;
-  const cashTotalRow = db.prepare("SELECT COALESCE(SUM(montant_encaisse),0) AS total FROM leads WHERE status = 'closes'").get() as { total: number };
+export async function closeOutZone(ville: string, secteur: string): Promise<{ updated: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE leads
+    SET status = 'concurrent',
+        date_derniere_action = to_char(NOW(), 'YYYY-MM-DD'),
+        updated_at = NOW()
+    WHERE ville = ${ville} AND secteur = ${secteur}
+      AND status IN ('contactes','interesses','nouveaux')
+    RETURNING id
+  `;
+  return { updated: (rows as unknown[]).length };
+}
+
+export async function metrics() {
+  await ensureSchema();
+  const sql = getSql();
+  const [{ n: total }] = (await sql`SELECT COUNT(*)::int AS n FROM leads`) as Array<{ n: number }>;
+  const [{ n: earlyBirdSignes }] = (await sql`SELECT COUNT(*)::int AS n FROM leads WHERE status = 'closes'`) as Array<{ n: number }>;
+  const [{ n: demosEnCours }] = (await sql`SELECT COUNT(*)::int AS n FROM leads WHERE status = 'demo'`) as Array<{ n: number }>;
+  const [{ n: contactes }] = (await sql`SELECT COUNT(*)::int AS n FROM leads WHERE status IN ('contactes','interesses','demo','closes')`) as Array<{ n: number }>;
+  const [{ n: demosBookeesTotal }] = (await sql`SELECT COUNT(*)::int AS n FROM leads WHERE status IN ('demo','closes')`) as Array<{ n: number }>;
+  const [{ total: cashTotal }] = (await sql`SELECT COALESCE(SUM(montant_encaisse),0)::float AS total FROM leads WHERE status = 'closes'`) as Array<{ total: number }>;
 
   const tauxContactDemo = contactes > 0 ? Math.round((demosBookeesTotal / contactes) * 100) : 0;
   const tauxDemoClient = demosBookeesTotal > 0 ? Math.round((earlyBirdSignes / demosBookeesTotal) * 100) : 0;
@@ -202,7 +239,7 @@ export function metrics() {
     earlyBirdGoal,
     earlyBirdRestants: Math.max(0, earlyBirdGoal - earlyBirdSignes),
     earlyBirdTermine: earlyBirdSignes >= earlyBirdGoal,
-    cashTotal: cashTotalRow.total,
+    cashTotal,
     mrrEquivalent: Math.round(earlyBirdSignes * 41.67 * 100) / 100,
     demosEnCours,
     tauxContactDemo,

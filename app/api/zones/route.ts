@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const ville = url.searchParams.get("ville");
   const secteur = url.searchParams.get("secteur");
   if (ville && secteur) {
-    return NextResponse.json({ leads: leadsInZone(ville, secteur) });
+    return NextResponse.json({ leads: await leadsInZone(ville, secteur) });
   }
-  return NextResponse.json({ zones: listZones() });
+  return NextResponse.json({ zones: await listZones() });
 }

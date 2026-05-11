@@ -6,8 +6,8 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export default function LeadDetailPage({ params }: { params: { id: string } }) {
-  const lead = getLead(Number(params.id));
+export default async function LeadDetailPage({ params }: { params: { id: string } }) {
+  const lead = await getLead(Number(params.id));
   if (!lead) notFound();
   return (
     <div className="space-y-4">

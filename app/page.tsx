@@ -4,9 +4,8 @@ import { listLeads, metrics } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const leads = listLeads();
-  const m = metrics();
+export default async function HomePage() {
+  const [leads, m] = await Promise.all([listLeads(), metrics()]);
   return (
     <div className="space-y-4">
       <EarlyBirdDashboard initial={m} />
