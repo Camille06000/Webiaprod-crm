@@ -1,47 +1,273 @@
-# Webiaprod AI — CRM Kanban Early Bird
+# Webiaprod AI — Système de prospection autonome GEO/SEO
 
-CRM Kanban Next.js 14 + Tailwind + **Neon Postgres** + dnd-kit pour la
-prospection GEO/SEO de Webiaprod AI. Conçu autour de l'offre **Early Bird
-500€/12 mois + audit GEO offert** (50 places, 2-3 clients max par
-ville+secteur).
+> Machine de prospection cold mailing pour vendre l'offre **Early Bird
+> GEO/SEO Local** de Webiaprod AI : **500€ pour 12 mois + audit GEO
+> offert** (au lieu de 1 188€), limitée à 50 clients, max 2-3 par
+> ville+secteur.
 
-## Stack
+C'est **deux briques qui travaillent ensemble** :
 
-- Next.js 14 (App Router) + TypeScript
-- Tailwind CSS
-- **Neon Postgres** via `@neondatabase/serverless` (Edge-compatible)
-- `@dnd-kit/core` + `@dnd-kit/sortable` pour le drag & drop
-- **Vercel Cron** quotidien à 9h Paris pour l'orchestrateur de prospection
-- Interface 100% FR, responsive mobile
+| Brique | Rôle |
+|---|---|
+| **CRM Kanban** (web app) | La source de vérité : leads, statuts, scores, zones, métriques. Accessible depuis ton téléphone, ton ordi, n'importe où. |
+| **Subagents Claude Code** (`.claude/agents/`) | Le cerveau : un agent qui pilote la run quotidienne, un agent qui rédige les emails dans la bonne voix. |
 
 ---
 
-## Déploiement (Vercel + Neon)
+## Le problème qu'on résout
 
-### 1. Créer la base Neon (gratuit)
+Quand un client potentiel demande à ChatGPT *« meilleur restaurant
+français à Bangkok »* ou *« plombier fiable Lyon »*, **ce sont nos
+clients qui doivent ressortir**.
 
-1. Va sur [console.neon.tech](https://console.neon.tech)
-2. Crée un projet `webiaprod-crm`
-3. Copie la **Pooled connection string** (`postgres://...neon.tech/...?sslmode=require`)
+Webiaprod AI référence les entreprises locales sur les IA génératives
+(ChatGPT, Claude, Perplexity, Gemini, Google AI Overviews). On vend ça en
+cold mailing :
+
+- **Prix public site** : 99€/mois (1 188€/an) — l'ancrage.
+- **Early Bird** : 500€/12 mois + audit GEO offert (valeur 447€). Économie totale 1 135€.
+- **Plafond global** : 50 clients Early Bird, puis on bascule sur l'offre publique.
+- **Rareté géographique** : 2-3 entreprises max par ville+secteur. Quand
+  on signe 3 dentistes à Lille, la zone se ferme automatiquement et les
+  prospects restants sur cette zone deviennent « Concurrent signé ».
+
+Les **4 leviers psychologiques** activés à chaque email :
+
+1. **Prix** (500€ vs 1 188€, -58%)
+2. **Bonus** (audit GEO 447€ offert)
+3. **Rareté quantitative** (50 premiers clients)
+4. **Rareté géographique** (2-3 par zone)
+
+---
+
+## Ce que le CRM fait
+
+### 1. Pipeline Kanban (page d'accueil)
+
+8 colonnes représentant l'état d'un prospect, du premier draft Gmail
+à la signature :
+
+```
+Nouveaux Leads → Contactés → Intéressés → Démo bookée → Closés Early Bird
+              ↓
+        Pas Fit   Concurrent signé   Pas intéressé / NPAI
+```
+
+Tu fais glisser une carte d'une colonne à l'autre, le CRM met à jour le
+statut + recalcule la prochaine action recommandée.
+
+### 2. Dashboard Early Bird (en tête de page)
+
+À chaque instant tu vois :
+
+- 🔥 **Clients Early Bird signés : N/50** (avec barre de progression)
+- 💰 **Cash encaissé total** (= N × 500€)
+- 📅 **MRR équivalent** (= N × 41,67€/mois)
+- 🎯 **Démos bookées en attente**
+- 📊 **Taux conv contact → démo** et **démo → client**
+
+Quand N atteint 50 → bandeau **« Early Bird terminé, basculer offre publique 99€/mois »**.
+
+### 3. Zones bloquées (page `/zones`)
+
+Tableau filtrable de tous les couples **ville × secteur** où tu as des
+leads :
+
+- **OUVERT** : < 3 signés sur la zone, tu peux encore prospecter.
+- **FERMÉ** : ≥ 3 signés. Bandeau d'alerte rouge.
+  Bouton **« Marquer leads restants Concurrent signé »** pour solder la
+  zone d'un coup et notifier les prospects que la place est prise.
+
+Le panneau latéral te liste les prospects à closer **vite** sur la zone
+(Contactés / Intéressés / Démo bookée) avant qu'ils basculent en
+« Concurrent signé ».
+
+### 4. Scoring 1-10 automatique
+
+À chaque lead créé ou modifié :
+
+| Critère | Points |
+|---|---|
+| Email pro vérifiable | +2 |
+| Site web actif | +2 |
+| Note Google ≥ 4 ET ≥ 20 avis | +2 |
+| Description claire | +1 |
+| Top 10 Google local pour son secteur | +3 |
+| Google Business Profile bien rempli | +1 |
+
+**Score < 5 → atterrit direct dans « Pas Fit »**, pas de draft à
+rédiger.
+
+### 5. Actions recommandées avec dates
+
+Chaque lead a une **prochaine action** calculée selon son statut :
+
+- **J+0** : valider le draft Gmail
+- **J+3** : relance soft (« vos concurrents... »)
+- **J+7** : relance valeur (test ChatGPT live)
+- **J+14** : archiver « Pas intéressé »
+
+Sur la fiche d'un lead, deux boutons :
+- ✓ **Action faite** → recalcule la prochaine action
+- ⏭ **Reporter +2j** → repousse la date
+
+Les leads en retard apparaissent en rouge sur les cartes Kanban.
+
+---
+
+## Ce que les Subagents font
+
+Deux subagents Claude Code dans `.claude/agents/`. Tu les invoques depuis
+Claude Code une fois que tu as cloné le repo.
+
+### `webiaprod-cold-email` — le rédacteur
+
+**Rôle** : produire UN email cold dans la voix Webiaprod, à la demande.
+
+**Tu lui dis** : *« écris un cold email pour Boulangerie du Marché, Lyon
+Croix-Rousse, 312 avis 4,7★ »*.
+
+**Il te rend** un email de 5-6 lignes + signature, format imposé :
+
+```
+Objet : <≤ 50 caractères>
+
+Ligne 1 — accroche personnalisée (élément factuel)
+Ligne 2 — pivot ChatGPT (« sauf que sur ChatGPT... »)
+Ligne 3 — offre Early Bird avec les 4 leviers
+Ligne 4 — bénéfice concret secteur
+Ligne 5 — CTA Calendly 15 min démo LIVE
+
+Jérôme [Nom]
+Chef de projet — Webiaprod AI
+Agence IA certifiée RS6776
+webiaprod.fr
+```
+
+**Garde-fous** (refus de livrer si une condition échoue) :
+- Pas d'emoji, pas de mot spammy en objet
+- 4 leviers Early Bird obligatoires (500€/12 mois, 447€ offert, 50, 2-3/zone)
+- Accroche citant un élément factuel (avis, position, ancienneté)
+- CTA = démo live 15 min, pas « un appel »
+- Signature RS6776 obligatoire
+
+### `webiaprod-daily-prospection` — l'orchestrateur quotidien
+
+**Rôle** : à 9h Paris chaque jour, tourner le cycle complet en 12 étapes
+sans intervention humaine.
+
+```
+1.  Vérifier le compteur Early Bird (N/50)
+       └── si ≥ 50, alerte email et arrêt
+2.  Identifier le secteur+ville ACTIF (passer au suivant si besoin)
+3.  Vérifier que la zone n'est pas FERMÉE
+4.  Scraper 50-80 leads via Apify (Google Maps)
+5.  Dédupliquer contre le CRM
+6.  Scorer chaque lead (1-10)
+7.  Pour chaque score ≥ 5 → déléguer la rédaction au subagent
+       webiaprod-cold-email et créer le draft Gmail
+8.  Logger le lead dans le CRM
+9.  Détecter si la zone est épuisée (< 5 leads/jour pendant 2 jours, etc.)
+10. Logger la run du jour
+11. Envoyer un email récap à jerome@webiaprod.fr (top 3, KPIs, alertes)
+12. Lire la boîte [WBAI-FEEDBACK] et appliquer les corrections demain
+```
+
+**Règle absolue** : **jamais d'envoi auto** vers les prospects. L'agent
+crée des **drafts Gmail**, Jérôme valide manuellement.
+
+---
+
+## L'enchaînement quotidien
+
+```
+                              9h Paris
+                                 │
+                                 ▼
+        ┌────────────────────────────────────────────┐
+        │  Vercel Cron déclenche /api/cron/daily      │
+        │  → renvoie zone active, leads à relancer    │
+        │    et KPIs au subagent daily-prospection    │
+        └────────────────────────────────────────────┘
+                                 │
+                                 ▼
+        ┌────────────────────────────────────────────┐
+        │  Subagent daily-prospection :               │
+        │   • Apify scrape la zone du jour            │
+        │   • Dédup + score                           │
+        │   • Pour chaque lead retenu, appelle        │
+        │     subagent cold-email                     │
+        │   • Crée les drafts Gmail                   │
+        │   • Logge tout dans le CRM                  │
+        └────────────────────────────────────────────┘
+                                 │
+                                 ▼
+        ┌────────────────────────────────────────────┐
+        │  Email récap à jerome@webiaprod.fr          │
+        │  → Jérôme valide les drafts dans Gmail      │
+        │  → Jérôme déplace les cartes dans le CRM    │
+        │    au fil des réponses / démos / signatures │
+        └────────────────────────────────────────────┘
+```
+
+Tout est traçable dans le CRM, et chaque KPI Early Bird est recalculé en
+direct.
+
+---
+
+## Architecture technique
+
+| Couche | Tech |
+|---|---|
+| Frontend | Next.js 14 App Router + Tailwind + dnd-kit, 100% FR, responsive mobile |
+| Backend | Routes API Next.js (Node runtime) |
+| DB | **Neon Postgres** (gratuit, serverless) via `@neondatabase/serverless` |
+| Hosting | **Vercel** (gratuit), URL publique 24/7 |
+| Cron | **Vercel Cron** quotidien à 8h UTC (= 9h Paris hiver / 10h été) |
+| Agents | Subagents Claude Code dans `.claude/agents/` (markdown + frontmatter) |
+| Sécurité cron | Endpoint `/api/cron/daily` protégé par `CRON_SECRET` |
+
+### Routes API
+
+| Méthode + Route | Rôle |
+|---|---|
+| `GET /api/leads` · `POST /api/leads` | Lister · Créer un lead |
+| `GET/PATCH/DELETE /api/leads/:id` | Lire / modifier / supprimer |
+| `POST /api/leads/:id/move` | Changer le statut (drag & drop) |
+| `POST /api/leads/:id/action` | `op: done` (action faite) ou `skip` (+2j) |
+| `GET /api/zones` | Liste des zones avec statuts OUVERT/FERMÉ |
+| `GET /api/zones?ville=…&secteur=…` | Leads d'une zone |
+| `POST /api/zones/close-out` | Solder une zone fermée (basculer leads → Concurrent signé) |
+| `GET /api/metrics` | KPIs Early Bird en temps réel |
+| `GET /api/cron/daily` | Snapshot quotidien protégé par `CRON_SECRET` |
+
+---
+
+## Déploiement (5 min, gratuit)
+
+### 1. Base Neon
+
+1. [console.neon.tech](https://console.neon.tech) → nouveau projet `webiaprod-crm`
+2. **Connection Details → Pooled connection** → copier la string `postgres://…?sslmode=require`
 
 ### 2. Déployer sur Vercel
 
-1. Va sur [vercel.com/new](https://vercel.com/new)
-2. Importe le repo GitHub `Camille06000/Webiaprod-crm`
-3. Dans **Environment Variables**, ajoute :
-   - `DATABASE_URL` = la connection string Neon
-   - `CRON_SECRET` = une chaîne aléatoire (génère avec `openssl rand -hex 32`)
-4. Deploy.
+1. [vercel.com/new](https://vercel.com/new) → import du repo `Camille06000/Webiaprod-crm`
+2. **Environment Variables** :
+   - `DATABASE_URL` = la connection Neon
+   - `CRON_SECRET` = chaîne aléatoire (`openssl rand -hex 32`)
+3. **Deploy**
 
-Vercel crée automatiquement le cron job défini dans `vercel.json` (déclenché
-à **8h UTC** = 9h Paris en hiver / 10h Paris en été).
+Le schéma se crée automatiquement au premier appel. Le cron Vercel est
+configuré dans `vercel.json` et tourne dès le premier déploiement.
 
-### 3. Initialiser le schéma + (optionnel) seeder
+### 3. (Optionnel) Seeder 9 leads de démo
 
-Une fois déployé, le schéma se crée tout seul au premier appel. Pour
-**peupler des leads de démo**, exécute localement (avec le `.env.local`) :
+Depuis ton ordi :
 
 ```bash
+cp .env.example .env.local      # mets ton DATABASE_URL Neon
+npm install
 npm run seed
 ```
 
@@ -50,49 +276,76 @@ npm run seed
 ## Développement local
 
 ```bash
-cp .env.example .env.local
-# remplis DATABASE_URL avec ta connection string Neon
+cp .env.example .env.local      # DATABASE_URL = ta string Neon
 npm install
-npm run seed   # (optionnel) 9 leads de démo
-npm run dev    # http://localhost:3000
+npm run dev                      # http://localhost:3000
 ```
 
 ---
 
-## Fonctionnalités
+## Roadmap d'intégrations à brancher
 
-- **Kanban 8 colonnes** : Nouveaux Leads · Contactés · Intéressés · Démo
-  bookée · Closés Early Bird · Pas Fit · Concurrent signé · Pas intéressé /
-  NPAI. Drag & drop entre colonnes (mobile-friendly).
-- **Dashboard Early Bird** : N/50 signés, cash, MRR équivalent (× 41,67€),
-  démos en attente, taux conv contact→démo et démo→client. Bandeau auto à
-  50.
-- **Zones bloquées** : tableau ville × secteur, statut OUVERT (<3) / FERMÉ
-  (≥3), bandeau d'alerte, action « marquer Concurrent signé » pour les
-  leads restants.
-- **Scoring 1–10 auto** : email pro (+2), site actif (+2), Google ≥4 & ≥20
-  avis (+2), description claire (+1), top 10 local (+3), GBP rempli (+1).
-  Score < 5 → Pas Fit auto.
-- **Actions recommandées** : J+0 valider draft · J+3 relance soft · J+7
-  relance valeur ChatGPT · J+14 archivage. Boutons « Action faite » et
-  « +2j ».
-- **Subagents Claude Code** (`.claude/agents/`) :
-  - `webiaprod-cold-email` — rédige les cold emails dans la voix Webiaprod
-  - `webiaprod-daily-prospection` — orchestre la run quotidienne 9h Paris
+L'agent quotidien a besoin de ces accès pour tourner **réellement**
+(sinon il planifie sans exécuter) :
 
-## Routes API
+| Service | Pourquoi | À faire |
+|---|---|---|
+| **Apify** | Scraper Google Maps | Token API dans Vercel env |
+| **Gmail** | Créer les drafts | OAuth Google + scope `gmail.compose` |
+| **SMTP / Gmail send** | Email récap quotidien | OAuth ou SMTP applicatif |
+| **Calendly** | Lien démo dans les emails | Juste l'URL dans env `CALENDLY_URL` |
 
-- `GET/POST /api/leads`, `GET/PATCH/DELETE /api/leads/:id`
-- `POST /api/leads/:id/move` — change le statut (drag & drop)
-- `POST /api/leads/:id/action` — `op: done | skip`
-- `GET /api/zones`, `GET /api/zones?ville=...&secteur=...`
-- `POST /api/zones/close-out` — bascule les leads en cours d'une zone fermée
-- `GET /api/metrics` — KPI Early Bird
-- `GET /api/cron/daily` — snapshot quotidien pour l'orchestrateur
-  (protégé par `Authorization: Bearer ${CRON_SECRET}`)
+Variables d'env optionnelles listées dans `.env.example`.
 
-## Modèle économique
+---
 
-- Offre publique : **99€/mois (1 188€/an)**
-- Offre Early Bird : **500€/12 mois + audit GEO offert (447€)**, 50 places
-- Rareté géo : 2-3 clients max par ville+secteur
+## Structure du repo
+
+```
+.
+├── app/
+│   ├── api/
+│   │   ├── leads/             # CRUD + move + action
+│   │   ├── zones/             # zones bloquées + close-out
+│   │   ├── metrics/           # KPIs Early Bird
+│   │   └── cron/daily/        # snapshot pour l'agent quotidien
+│   ├── leads/[id]/            # fiche lead
+│   ├── leads/new/             # création
+│   ├── zones/                 # vue zones bloquées
+│   └── page.tsx               # Kanban + dashboard
+├── components/
+│   ├── KanbanBoard.tsx        # drag & drop dnd-kit
+│   ├── LeadCard.tsx
+│   ├── LeadForm.tsx           # création / édition complète
+│   ├── LeadActionPanel.tsx    # boutons « action faite » / « +2j »
+│   ├── EarlyBirdDashboard.tsx # KPIs en tête
+│   └── ZonesView.tsx          # tableau zones + panneau latéral
+├── lib/
+│   ├── columns.ts             # définition des 8 colonnes
+│   ├── types.ts               # type Lead
+│   ├── scoring.ts             # règle de scoring 1-10
+│   ├── actions.ts             # règles J+0 / J+3 / J+7 / J+14
+│   ├── db.ts                  # connexion Neon + migration schéma
+│   └── repo.ts                # toutes les requêtes DB (async)
+├── scripts/
+│   └── seed.mjs               # 9 leads de démo
+├── .claude/agents/
+│   ├── webiaprod-cold-email.md        # subagent rédacteur
+│   └── webiaprod-daily-prospection.md # subagent orchestrateur
+├── vercel.json                # Vercel Cron quotidien
+├── .env.example
+└── README.md
+```
+
+---
+
+## Récap : ce que tu obtiens
+
+- Une **URL publique 24/7** accessible depuis ton téléphone
+- Un **pipeline visuel** des 50 places Early Bird, à jour en temps réel
+- Une **rareté géographique** appliquée automatiquement (zones FERMÉES)
+- Un **scoring** qui élimine les mauvais leads avant même la rédaction
+- Une **voix éditoriale** verrouillée dans un subagent (pas de dérive)
+- Un **cycle quotidien autonome** qui tourne à 9h Paris sans toi
+- **0€/mois** d'infra (Vercel + Neon gratuit)
+- **Jamais d'envoi auto** → drafts uniquement, tu valides
