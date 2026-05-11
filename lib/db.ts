@@ -1,17 +1,22 @@
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import postgres from "postgres";
 
-let _sql: NeonQueryFunction<false, false> | null = null;
+let _sql: ReturnType<typeof postgres> | null = null;
 let _migrated = false;
 
-export function getSql(): NeonQueryFunction<false, false> {
+export function getSql() {
   if (_sql) return _sql;
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
-      "DATABASE_URL manquant. Configure-le dans .env.local (dev) ou dans Vercel → Settings → Environment Variables (prod)."
+      "DATABASE_URL manquant. Configure-le dans .env.local (dev) ou dans les variables d'env du serveur (prod)."
     );
   }
-  _sql = neon(url);
+  _sql = postgres(url, {
+    prepare: false,
+    ssl: url.includes("sslmode=require") ? "require" : (url.startsWith("postgres://localhost") || url.startsWith("postgres://127.0.0.1") ? false : "prefer"),
+    max: 10,
+    idle_timeout: 20,
+  });
   return _sql;
 }
 

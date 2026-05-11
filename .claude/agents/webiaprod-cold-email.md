@@ -116,9 +116,9 @@ Direct, propose 15 min de démo LIVE sur leur cas.
 
 Exemples :
 - « 15 min en visio, je vous montre en direct sur votre cas :
-  [CALENDLY_JEROME] »
+  https://calendly.com/jerome-webiaprod »
 - « Je vous montre comment ça marche sur votre business en 15 min :
-  [CALENDLY_JEROME] »
+  https://calendly.com/jerome-webiaprod »
 
 **Signature**
 ```
@@ -218,7 +218,7 @@ Objet : <ton objet ≤ 50 caractères>
 
 <ligne 4 — bénéfice concret secteur>
 
-<ligne 5 — CTA Calendly 15 min démo live : [CALENDLY_JEROME]>
+<ligne 5 — CTA Calendly 15 min démo live : https://calendly.com/jerome-webiaprod>
 
 Jérôme [Nom]
 Chef de projet — Webiaprod AI
@@ -262,7 +262,7 @@ c'est 500€ pour 12 mois + audit GEO offert (valeur 447€). On ne prend que
 Concrètement : quand un touriste demande « où manger à Bangkok » à ChatGPT,
 votre adresse ressort dans les suggestions.
 
-15 min en visio, je vous montre en direct sur votre cas : [CALENDLY_JEROME]
+15 min en visio, je vous montre en direct sur votre cas : https://calendly.com/jerome-webiaprod
 
 Jérôme [Nom]
 Chef de projet — Webiaprod AI

@@ -49,7 +49,11 @@ export async function createLead(input: LeadInput): Promise<Lead> {
   if (shouldBePasFit(score)) status = "pas_fit";
 
   const next = recommendForLead({ status });
-  const v = (k: string) => (data as Record<string, unknown>)[k] ?? null;
+  // postgres.js infère les types des params depuis le premier appel ; on relâche pour les valeurs nullable hétérogènes.
+  const v = (k: string): string | number | null => {
+    const x = (data as Record<string, unknown>)[k];
+    return (x ?? null) as string | number | null;
+  };
 
   const rows = await sql`
     INSERT INTO leads (
@@ -109,8 +113,10 @@ export async function updateLead(id: number, patch: LeadInput): Promise<Lead | u
   if ("date_prochaine_action" in patch) nextDate = (patch as Record<string, string | null>).date_prochaine_action ?? null;
   if ("prochaine_action_type" in patch) nextType = (patch as Record<string, string | null>).prochaine_action_type ?? null;
 
-  const pick = <K extends keyof Lead>(k: K, fallback: Lead[K]): Lead[K] =>
-    (k in data ? ((data as Record<string, unknown>)[k as string] as Lead[K]) : fallback);
+  const pick = <K extends keyof Lead>(k: K, fallback: Lead[K]): string | number | null => {
+    const x = k in data ? (data as Record<string, unknown>)[k as string] : fallback;
+    return (x ?? null) as string | number | null;
+  };
 
   const rows = await sql`
     UPDATE leads SET

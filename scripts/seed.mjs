@@ -1,11 +1,19 @@
-import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
 
 if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL manquant. Crée .env.local avec DATABASE_URL=... (Neon).");
+  console.error("DATABASE_URL manquant. Crée .env.local avec DATABASE_URL=...");
   process.exit(1);
 }
 
-const sql = neon(process.env.DATABASE_URL);
+const url = process.env.DATABASE_URL;
+const sql = postgres(url, {
+  prepare: false,
+  ssl: url.includes("sslmode=require")
+    ? "require"
+    : url.startsWith("postgres://localhost") || url.startsWith("postgres://127.0.0.1")
+    ? false
+    : "prefer",
+});
 
 function computeScore(l) {
   let s = 0;
@@ -180,3 +188,4 @@ for (const s of seeds) {
 }
 
 console.log(`Seed ok: ${seeds.length} leads insérés.`);
+await sql.end();

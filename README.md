@@ -243,32 +243,67 @@ direct.
 
 ---
 
-## Déploiement (5 min, gratuit)
+## Déploiement
 
-### 1. Base Neon
+3 cibles supportées : **VPS Ubuntu** (Postgres local), **Vercel + Neon**
+(cloud), ou **local** (dev).
 
-1. [console.neon.tech](https://console.neon.tech) → nouveau projet `webiaprod-crm`
-2. **Connection Details → Pooled connection** → copier la string `postgres://…?sslmode=require`
+### Option 1 — VPS Ubuntu 22.04 / 24.04 (recommandé)
 
-### 2. Déployer sur Vercel
-
-1. [vercel.com/new](https://vercel.com/new) → import du repo `Camille06000/Webiaprod-crm`
-2. **Environment Variables** :
-   - `DATABASE_URL` = la connection Neon
-   - `CRON_SECRET` = chaîne aléatoire (`openssl rand -hex 32`)
-3. **Deploy**
-
-Le schéma se crée automatiquement au premier appel. Le cron Vercel est
-configuré dans `vercel.json` et tourne dès le premier déploiement.
-
-### 3. (Optionnel) Seeder 9 leads de démo
-
-Depuis ton ordi :
+Sur ton VPS fraîchement provisionné, en root :
 
 ```bash
-cp .env.example .env.local      # mets ton DATABASE_URL Neon
+curl -fsSL https://raw.githubusercontent.com/Camille06000/Webiaprod-crm/main/scripts/install-vps.sh -o install.sh
+chmod +x install.sh
+DB_PASSWORD="$(openssl rand -hex 16)" SEED=1 ./install.sh
+```
+
+Ça installe en une commande :
+- **Node.js 20** LTS
+- **Postgres** + base `webiaprod_crm` + utilisateur dédié
+- L'app dans `/home/webiaprod/app`, **build production**
+- **pm2** (autostart au reboot)
+- **UFW** (firewall : 22 + 3000 ouverts)
+- **Crontab** quotidien à 9h Paris (`CRON_TZ=Europe/Paris`) qui appelle
+  `/api/cron/daily` avec le `CRON_SECRET`
+- (optionnel) **Seed** des 9 leads de démo si `SEED=1`
+
+À la fin, l'IP publique + l'URL `http://<IP>:3000` s'affichent.
+
+| Commande | Utilité |
+|---|---|
+| `sudo -u webiaprod pm2 logs webiaprod-crm` | Logs de l'app |
+| `tail -f /var/log/webiaprod-cron.log` | Logs du cron quotidien |
+| `sudo -u webiaprod pm2 restart webiaprod-crm` | Redémarrer après un pull |
+| `cd /home/webiaprod/app && sudo -u webiaprod git pull && npm run build && sudo -u webiaprod pm2 restart webiaprod-crm` | Mettre à jour |
+
+**Pas de HTTPS sans domaine.** Pour ajouter HTTPS, achète un domaine,
+pointe-le sur ton IP, puis :
+```bash
+apt install -y nginx certbot python3-certbot-nginx
+certbot --nginx -d crm.tondomaine.fr
+```
+
+### Option 2 — Vercel + Neon (cloud)
+
+1. **Neon** : [console.neon.tech](https://console.neon.tech) → projet
+   `webiaprod-crm` → **Pooled connection** → copier la string.
+2. **Vercel** : [vercel.com/new](https://vercel.com/new) → import du repo
+   `Camille06000/Webiaprod-crm` → variables d'env :
+   - `DATABASE_URL` = la string Neon
+   - `CRON_SECRET` = `openssl rand -hex 32`
+3. **Deploy**.
+
+Vercel crée automatiquement le cron défini dans `vercel.json` (déclenché
+à 8h UTC = 9h Paris hiver / 10h Paris été).
+
+### Option 3 — Local (dev)
+
+```bash
+cp .env.example .env.local      # DATABASE_URL = ta string Postgres
 npm install
-npm run seed
+npm run seed                     # (optionnel) 9 leads de démo
+npm run dev                      # http://localhost:3000
 ```
 
 ---

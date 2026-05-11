@@ -25,7 +25,7 @@ ou épuisement), puis passer au suivant **automatiquement**.
 - **Prix public site** : 99€/mois (à mentionner comme ancrage)
 - **Limite globale** : 50 premiers clients toutes zones confondues
 - **Rareté géo** : 2-3 entreprises max par ville+secteur
-- **Calendly** : `[CALENDLY_JEROME]`
+- **Calendly** : `https://calendly.com/jerome-webiaprod`
 - **CRM Webiaprod** : http://localhost:3000
 - **Google Sheet base** : `WBAI_Sheets` (Drive Webiaprod)
 - **Email récap quotidien** : `jerome@webiaprod.fr`
