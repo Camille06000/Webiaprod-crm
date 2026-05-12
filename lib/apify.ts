@@ -84,24 +84,17 @@ export async function scrapeGoogleMapsRaw(params: ScrapeParams): Promise<ApifyPl
 }
 
 function toLead(secteur: string, ville: string, p: ApifyPlace): ScrapedLead {
-  // Apify expose les emails à plusieurs emplacements selon l'option activée.
-  const emailFromArrays =
-    (p as Record<string, unknown>)["emails"] as string[] | undefined ??
-    (p as Record<string, unknown>)["contactDetails"] as { emails?: string[] } | undefined;
-  const cd = (p as Record<string, unknown>)["contactDetails"] as { emails?: string[]; phones?: string[]; phonesUncertain?: string[] } | undefined;
-  const email =
-    (Array.isArray(emailFromArrays) ? emailFromArrays[0] : undefined) ??
-    cd?.emails?.[0] ??
-    p.email ??
-    null;
+  const rec = p as Record<string, unknown>;
+  const emails = Array.isArray(rec.emails) ? (rec.emails as string[]) : [];
+  const phones = Array.isArray(rec.phones) ? (rec.phones as string[]) : [];
 
   return {
     entreprise: (p.title ?? "").trim(),
     secteur,
     ville,
     quartier: p.neighborhood ?? null,
-    email,
-    telephone: p.phoneUnformatted ?? p.phone ?? cd?.phones?.[0] ?? null,
+    email: emails[0] ?? p.email ?? null,
+    telephone: p.phoneUnformatted ?? p.phone ?? phones[0] ?? null,
     site: p.website ?? null,
     note_google: typeof p.totalScore === "number" ? p.totalScore : null,
     nb_avis: typeof p.reviewsCount === "number" ? p.reviewsCount : null,
