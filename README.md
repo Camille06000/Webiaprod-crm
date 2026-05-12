@@ -240,6 +240,57 @@ direct.
 | `POST /api/zones/close-out` | Solder une zone fermée (basculer leads → Concurrent signé) |
 | `GET /api/metrics` | KPIs Early Bird en temps réel |
 | `GET /api/cron/daily` | Snapshot quotidien protégé par `CRON_SECRET` |
+| `POST /api/scrape` | Scrape Apify Google Maps + dédup + score + import (auth Bearer `CRON_SECRET`) |
+| `POST /api/leads/:id/draft` | Crée un draft Gmail pour le lead (utilise `lead.objet_email` + `lead.accroche` ou un template par défaut) |
+
+## Intégration Gmail (création de drafts)
+
+Le bouton **« ✉️ Créer draft Gmail »** sur la fiche d'un lead crée
+automatiquement un brouillon dans la boîte de l'adresse OAuth'd, avec
+le corps voix Webiaprod (5-6 lignes + signature RS6776, CTA Calendly).
+
+### Setup (1 fois, ~10 min)
+
+1. **Google Cloud Console** → [console.cloud.google.com](https://console.cloud.google.com)
+   - Crée un projet (ou utilise un existant)
+   - **APIs & Services → Library** → cherche « Gmail API » → **Enable**
+   - **OAuth consent screen** → User Type **External** (ou Internal si Workspace)
+     - App name : `Webiaprod CRM`
+     - User support email : ton email
+     - Test users : ajoute l'email d'envoi (ex. `jerome@webiaprod.fr`)
+   - **Credentials → Create credentials → OAuth client ID**
+     - Application type : **Desktop app**
+     - Tu obtiens un **Client ID** et un **Client Secret**
+
+2. **Récupère le refresh token** (sur ton PC, pas sur le VPS — il faut un navigateur) :
+
+   ```bash
+   git clone https://github.com/Camille06000/Webiaprod-crm.git
+   cd Webiaprod-crm
+   export GOOGLE_OAUTH_CLIENT_ID='...apps.googleusercontent.com'
+   export GOOGLE_OAUTH_CLIENT_SECRET='GOCSPX-...'
+   node scripts/gmail-oauth.mjs
+   ```
+
+   → un lien s'affiche, tu cliques dessus, tu autorises avec ton email Webiaprod,
+   et le terminal te print le `GOOGLE_OAUTH_REFRESH_TOKEN`.
+
+3. **Sur le VPS**, ajoute les 5 variables dans `/home/webiaprod/app/.env.local` :
+
+   ```bash
+   echo 'GOOGLE_OAUTH_CLIENT_ID=...' | sudo tee -a /home/webiaprod/app/.env.local
+   echo 'GOOGLE_OAUTH_CLIENT_SECRET=...' | sudo tee -a /home/webiaprod/app/.env.local
+   echo 'GOOGLE_OAUTH_REFRESH_TOKEN=...' | sudo tee -a /home/webiaprod/app/.env.local
+   echo 'GMAIL_FROM_EMAIL=jerome@webiaprod.fr' | sudo tee -a /home/webiaprod/app/.env.local
+   echo 'GMAIL_FROM_NAME=Jérôme Dupont' | sudo tee -a /home/webiaprod/app/.env.local
+   echo 'JEROME_LAST_NAME=Dupont' | sudo tee -a /home/webiaprod/app/.env.local
+   sudo -u webiaprod pm2 restart webiaprod-crm
+   ```
+
+4. **Test** depuis la fiche d'un lead avec email :
+   - Ouvre `/leads/X` dans le navigateur
+   - Clique **« ✉️ Créer draft Gmail »**
+   - Va dans https://mail.google.com/mail/u/0/#drafts → ton brouillon est là
 
 ---
 
