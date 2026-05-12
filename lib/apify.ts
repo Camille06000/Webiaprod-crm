@@ -57,6 +57,9 @@ export async function scrapeGoogleMaps(params: ScrapeParams): Promise<ScrapedLea
     exportPlaceUrls: false,
     scrapeReviewsCount: 0,
     scrapePlaceDetailPage: true,
+    // Visite le site web de chaque place pour en extraire emails + réseaux sociaux.
+    // C'est ce qui débloque les emails — sans ça, Apify ne renvoie que les données Google Maps.
+    scrapeContacts: true,
     skipClosedPlaces: true,
   };
 
