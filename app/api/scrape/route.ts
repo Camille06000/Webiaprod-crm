@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { scrapeGoogleMaps } from "@/lib/apify";
+import { scrapeGoogleMaps, scrapeGoogleMapsRaw } from "@/lib/apify";
 import { createLead, listLeads } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ interface Body {
   secteur?: string;
   maxResults?: number;
   dryRun?: boolean;
+  raw?: boolean;
 }
 
 export async function POST(req: Request) {
@@ -37,6 +38,20 @@ export async function POST(req: Request) {
   }
 
   const maxResults = Math.min(Math.max(1, body.maxResults ?? 50), 200);
+
+  // Mode debug : renvoie la structure brute Apify d'un seul lead pour inspection.
+  if (body.raw) {
+    try {
+      const raw = await scrapeGoogleMapsRaw({ ville, secteur, maxResults: Math.min(maxResults, 3) });
+      return NextResponse.json({
+        count: raw.length,
+        first_keys: raw[0] ? Object.keys(raw[0]) : [],
+        first: raw[0] ?? null,
+      });
+    } catch (err) {
+      return NextResponse.json({ error: "apify failure", details: (err as Error).message }, { status: 502 });
+    }
+  }
 
   let scraped;
   try {
